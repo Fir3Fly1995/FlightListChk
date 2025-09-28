@@ -4,6 +4,7 @@ import ttkbootstrap as bst
 from ttkbootstrap.scrolled import ScrolledFrame
 import os
 import sys
+import re # Added for flexible filename formatting
 # Can be found at https://github.com/Fir3Fly1995/FlightListChk Please check the LICENCE.md for usage.
 # --- Configuration ---
 # Get the appropriate directory for app data
@@ -16,6 +17,28 @@ APP_TITLE = "Flight Checklist"
 # { 'AircraftName': { 'ChecklistFilename': { line_index: bool_checked, ... } } }
 # This dictionary will now only store boolean values (True/False).
 CHECKLIST_STATES = {}
+
+def format_filename_for_display(filename):
+    """
+    Converts a raw filename (e.g., '01Cold_and_Dark.txt' or '01ColdandDark.txt')
+    into a clean, readable display name (e.g., '01 Cold and Dark').
+    """
+    # 1. Strip extension and replace underscores with spaces
+    base_name = filename.replace('.txt', '').replace('_', ' ')
+    
+    # 2. Insert a space after leading digits if a non-digit character immediately follows.
+    # Regex: (\d+) captures leading digits, ([A-Za-z]) captures the first letter.
+    # We replace '01Cold...' with '01 Cold...'.
+    match = re.match(r'(\d+)([A-Za-z])', base_name)
+    if match:
+        digits = match.group(1)
+        first_char = match.group(2)
+        # Reconstruct: digits + space + first char + rest of string
+        rest = base_name[len(digits) + len(first_char):]
+        return f"{digits} {first_char}{rest}"
+    
+    # If no leading digits are found, return the base name
+    return base_name
 
 class FlightList(bst.Window):
     """
@@ -89,7 +112,7 @@ class FlightList(bst.Window):
             control_frame,
             text="Uncheck All Items",
             command=self.uncheck_all,
-            # CHANGED: Use green 'success-outline' bootstyle
+            # Use green 'success-outline' bootstyle
             bootstyle="success-outline" 
         ).pack(side='right', padx=5)
 
@@ -158,6 +181,7 @@ class FlightList(bst.Window):
             paned_window.add(instruction_frame, weight=0) # Weight 0 because content is in the main frame
 
             # Populate the Treeview with checklist files
+            # These are sorted alphabetically, so numbering (01, 02) is critical
             checklist_files = sorted([f for f in os.listdir(os.path.join(LISTS_DIR, aircraft)) 
                                        if f.endswith('.txt')])
             
@@ -165,8 +189,8 @@ class FlightList(bst.Window):
             CHECKLIST_STATES.setdefault(aircraft, {})['__ORDER__'] = checklist_files
             
             for filename in checklist_files:
-                # Remove the .txt extension for display name
-                display_name = filename.replace('.txt', '').replace('_', ' ')
+                # NEW: Use the helper function to format the name for display
+                display_name = format_filename_for_display(filename)
                 tree.insert('', tk.END, text=display_name, values=(filename,))
 
             # Store the Treeview instance for later use (e.g., progression)
@@ -197,7 +221,8 @@ class FlightList(bst.Window):
         self.current_filename = filename
         self.current_filepath = filepath
         
-        self.checklist_title_var.set(f"{aircraft} - {filename.replace('.txt', '').replace('_', ' ')}")
+        # NEW: Use the helper function to format the name for the title
+        self.checklist_title_var.set(f"{aircraft} - {format_filename_for_display(filename)}")
 
         # Clear existing checklist items
         for widget in self.checklist_items_container.winfo_children():
@@ -238,7 +263,7 @@ class FlightList(bst.Window):
                 text=item,
                 variable=var,
                 command=cmd,
-                bootstyle="success-round-toggle", # Use round toggle style
+                bootstyle="success", # CHANGED: Use standard checkbox style with 'success' color
                 padding=5
             )
             chk.pack(fill='x', pady=2, padx=10, anchor='w')
@@ -302,7 +327,7 @@ class FlightList(bst.Window):
                     tree.selection_set(next_item_id) # Selects the item visually
                     tree.focus(next_item_id)       # Focuses the item
                     # The bound '<<TreeviewSelect>>' event will automatically call show_checklist
-                    self.checklist_title_var.set(f"Checklist complete. Loading next list: {next_filename.replace('.txt', '').replace('_', ' ')}")
+                    self.checklist_title_var.set(f"Checklist complete. Loading next list: {format_filename_for_display(next_filename)}")
                 else:
                     self.checklist_title_var.set(f"Sequence complete for {aircraft}! All checklists finished.")
 
@@ -335,7 +360,7 @@ class FlightList(bst.Window):
             checklist_states_map[index] = False
             
         # Update the status
-        self.checklist_title_var.set(f"All items in '{filename.replace('.txt', '').replace('_', ' ')}' have been unchecked.")
+        self.checklist_title_var.set(f"All items in '{format_filename_for_display(filename)}' have been unchecked.")
 
 
 if __name__ == "__main__":
