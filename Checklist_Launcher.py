@@ -23,7 +23,7 @@ EXE_FILENAME = "FlightList.exe"
 
 # GitHub RAW Content Links (Assumes manifest and exe are in the root of the main branch)
 GITHUB_RAW_BASE = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/"
-MANIFEST_URL = GITHUB_RAW_BASE + "manifest.txt"
+MANIFEST_URL = GITHUB_RAW_BASE + "manifest.txt" 
 EXE_DOWNLOAD_URL = GITHUB_RAW_BASE + EXE_FILENAME
 
 # Sentinel value to permanently skip the Sim Path prompt
@@ -40,10 +40,10 @@ class ChecklistLauncher(bst.Window):
         os.makedirs(MAIN_FOLDER, exist_ok=True)
         os.makedirs(LISTS_DIR, exist_ok=True)
         
-        # Initialize paths and versions (Version is now a dict: {'date': datetime, 'message': str})
+        # Initialize paths and versions (Version now uses 'date_int': YYYYMMDD integer)
         self.flight_sim_path = ""
-        # Default local version is a date far in the past
-        self.local_version_info = {'date': datetime(2000, 1, 1), 'message': 'Initial Install'}
+        # Default local version is a date far in the past (20000101 integer)
+        self.local_version_info = {'date_int': 20000101, 'message': 'Initial Install'}
         self.remote_version_info = None # Will be set by _check_for_update
         self.is_offline = False # Tracks if manifest check failed
         self.skip_sim_prompt = False # Tracks if the user selected 'Don't remind me again'
@@ -57,18 +57,32 @@ class ChecklistLauncher(bst.Window):
     # --- Version and Path Management ---
 
     def _parse_version_info(self, content):
-        """Parses 'DD/MM/YYYY - Message' into a datetime object and message string."""
+        """Parses 'YYYYMMDD - Message' into an integer (YYYYMMDD) and message string."""
         if not content:
             return None
         
         try:
-            # Assuming manifest is multi-line, only use the first line for version
             line = content.split('\n')[0].strip()
-            date_str, message = line.split(' - ', 1)
-            date_obj = datetime.strptime(date_str, '%d/%m/%Y')
-            return {'date': date_obj, 'message': message}
-        except Exception:
-            # Return None if parsing fails
+            
+            # Ensure line contains the separator before splitting
+            if ' - ' not in line:
+                # If separator is missing, parsing is definitely wrong
+                raise ValueError("Version line missing separator ' - '.") 
+                
+            # Use maxsplit=1 to handle messages that contain additional ' - '
+            date_int_str, message = line.split(' - ', 1)
+            date_int_str = date_int_str.strip()
+            
+            # Use strict parsing for YYYYMMDD and convert to int
+            date_obj = datetime.strptime(date_int_str, '%Y%m%d')
+            date_int = int(date_int_str)
+
+            # NOTE: We return the date as an integer for comparison
+            return {'date_int': date_int, 'message': message.strip()} 
+        
+        except Exception as e:
+            # FIX: Simplified f-string to avoid the backslash SyntaxError
+            print(f"DEBUG: Failed to parse version line '{line}': {e}")
             return None
 
     def _load_local_version(self):
@@ -78,6 +92,7 @@ class ChecklistLauncher(bst.Window):
                 content = f.read().strip()
                 parsed_info = self._parse_version_info(content)
                 if parsed_info:
+                    # Uses the new 'date_int' key
                     self.local_version_info = parsed_info
         except FileNotFoundError:
             pass
@@ -86,7 +101,8 @@ class ChecklistLauncher(bst.Window):
 
     def _save_local_version(self, version_info):
         """Saves the version info dictionary to the local version file."""
-        date_str = version_info['date'].strftime('%d/%m/%Y')
+        # Saves the YYYYMMDD integer as a string
+        date_str = str(version_info['date_int']) 
         content = f"{date_str} - {version_info['message']}"
         try:
             with open(VERSION_FILE, 'w') as f:
@@ -138,7 +154,7 @@ class ChecklistLauncher(bst.Window):
         if selected_path:
             self._save_sim_path(selected_path)
             self.status_var.set(f"Sim path set: {os.path.basename(selected_path)}")
-            self.status_var.set(self.get_initial_status())
+            # NOTE: We do not call get_initial_status() here, as this function is called inside the prompt flow.
         else:
             self.status_var.set("Flight Simulator path selection cancelled.")
 
@@ -191,9 +207,18 @@ class ChecklistLauncher(bst.Window):
 
     # --- UI Status and Layout ---
 
+    def _format_date_for_display(self, date_int):
+        """Converts YYYYMMDD integer to DD/MM/YYYY string for display."""
+        try:
+            date_str = str(date_int)
+            date_obj = datetime.strptime(date_str, '%Y%m%d')
+            return date_obj.strftime('%d/%m/%Y')
+        except ValueError:
+            return "N/A"
+
     def get_initial_status(self):
         """Returns the appropriate status message on startup."""
-        local_date_str = self.local_version_info['date'].strftime('%d/%m/%Y')
+        local_date_str = self._format_date_for_display(self.local_version_info['date_int'])
         sim_path_valid = self.flight_sim_path and os.path.exists(self.flight_sim_path)
         sim_status = "Sim Path Set" if sim_path_valid else "Sim Path NOT Set"
         
@@ -201,15 +226,24 @@ class ChecklistLauncher(bst.Window):
         exe_status = "Flight List.exe Found" if os.path.exists(EXE_PATH) else "Flight List.exe MISSING"
 
         if self.is_offline:
+            # Added danger style here to make offline status prominent
+            self.status_label.config(bootstyle="danger") if hasattr(self, 'status_label') else None
             return f"Offline/Connection Failed | Local Version: {local_date_str} | {exe_status} | {sim_status}"
             
-        needs_update = self.remote_version_info and self.remote_version_info['date'] > self.local_version_info['date']
+        # Comparison uses the raw YYYYMMDD integers now
+        needs_update = self.remote_version_info and self.remote_version_info['date_int'] > self.local_version_info['date_int']
         
         if needs_update:
-            update_date_str = self.remote_version_info['date'].strftime('%d/%m/%Y')
-            update_status_message = f"UPDATE AVAILABLE ({update_date_str}: {self.remote_version_info['message']})"
+            # Status message is simplified to just indicate an update is ready, 
+            # without showing the long changelog message.
+            update_status_message = "UPDATE AVAILABLE"
+            
+            # Added warning style here for update status
+            self.status_label.config(bootstyle="warning") if hasattr(self, 'status_label') else None
             return f"{update_status_message} | {exe_status} | {sim_status}"
         else:
+            # Set to secondary if online and up-to-date
+            self.status_label.config(bootstyle="secondary") if hasattr(self, 'status_label') else None
             return f"Online (Up to Date) | Local Version: {local_date_str} | {exe_status} | {sim_status}"
 
     def create_widgets(self):
@@ -247,10 +281,21 @@ class ChecklistLauncher(bst.Window):
 
         # Status Label
         self.status_var = tk.StringVar(value=self.get_initial_status())
-        # Highlight status if an update is available
-        status_style = "warning" if "UPDATE AVAILABLE" in self.status_var.get() else "secondary"
-        self.status_label = ttk.Label(main_frame, textvariable=self.status_var, bootstyle=status_style, wraplength=380, justify='center')
+        
+        # Initial style determination (to set bootstyle before get_initial_status runs again later)
+        if "UPDATE AVAILABLE" in self.status_var.get():
+            initial_style = "warning"
+        elif "Offline/Connection Failed" in self.status_var.get():
+            initial_style = "danger"
+        else:
+            initial_style = "secondary"
+        
+        # The Label is created here
+        self.status_label = ttk.Label(main_frame, textvariable=self.status_var, bootstyle=initial_style, wraplength=380, justify='center')
         self.status_label.pack(pady=10)
+        
+        # Now call get_initial_status again to set the final style correctly
+        self.status_var.set(self.get_initial_status())
 
 
     # --- Core Logic ---
@@ -261,7 +306,7 @@ class ChecklistLauncher(bst.Window):
         Shows the manual update prompt if an update is available.
         """
         
-        needs_update = self.remote_version_info and self.remote_version_info['date'] > self.local_version_info['date']
+        needs_update = self.remote_version_info and self.remote_version_info['date_int'] > self.local_version_info['date_int']
         local_exe_exists = os.path.exists(EXE_PATH)
         
         if not local_exe_exists:
@@ -280,7 +325,7 @@ class ChecklistLauncher(bst.Window):
             
         else:
             # Case 3: Local file exists, up-to-date, or offline check failed -> Just launch
-            self.status_var.set("Launching local version...")
+            self.status_var.set("Starting launch sequence...")
             self.update_idletasks()
             self._launch_app_core()
     
@@ -288,7 +333,7 @@ class ChecklistLauncher(bst.Window):
         """
         Custom dialog to let the user decide between updating or just launching.
         """
-        remote_date_str = self.remote_version_info['date'].strftime('%d/%m/%Y')
+        remote_date_str = self._format_date_for_display(self.remote_version_info['date_int'])
         
         dialog = tk.Toplevel(self)
         dialog.title("Update Available!")
@@ -362,7 +407,7 @@ class ChecklistLauncher(bst.Window):
             if self.remote_version_info:
                 # Save the new remote manifest info to local version.txt
                 self._save_local_version(self.remote_version_info)
-                remote_date_str = self.remote_version_info['date'].strftime('%d/%m/%Y')
+                remote_date_str = self._format_date_for_display(self.remote_version_info['date_int'])
                 self.status_var.set(f"Update complete! Installed version from {remote_date_str}.")
             else:
                 self.status_var.set("Download complete, but manifest was inaccessible. Version not saved.")
@@ -383,12 +428,11 @@ class ChecklistLauncher(bst.Window):
         
         return False
 
-    def _show_sim_path_prompt(self, launch_checklist_process):
+    def _show_sim_path_prompt(self):
         """
         Custom dialog to prompt the user to set the Flight Sim path, with option to skip permanently.
+        Returns True if the path was successfully set, False otherwise (including 'Not Now' and 'Don't Remind Me').
         """
-        # We need a non-blocking way to get the result from the file dialog back to the Toplevel
-        self.sim_prompt_result = None
         
         dialog = tk.Toplevel(self)
         dialog.title("Flight Simulator Path Missing")
@@ -404,18 +448,28 @@ class ChecklistLauncher(bst.Window):
 
         skip_var = tk.IntVar(value=0)
         
+        # --- Define Button Actions ---
+        
         def handle_set_now():
             dialog.destroy()
-            self._select_and_save_sim_path() # Opens file dialog and saves path
-            # After setting, relaunch core flow to launch the sim (as checklist is already running)
-            self._launch_sim_and_exit()
-        
+            # Opens file dialog and saves path to self.flight_sim_path
+            self._select_and_save_sim_path() 
+            # Check if the path was actually set after the file dialog
+            if self.flight_sim_path and os.path.exists(self.flight_sim_path):
+                # Path set, resume launch flow
+                self._launch_checklist_sim_sequence() 
+            else:
+                # Path selection was cancelled or file not found, resume launch flow (Sim will be skipped)
+                self._launch_checklist_sim_sequence()
+
         def handle_not_now():
             if skip_var.get() == 1:
                 self._save_sim_path(SKIP_PROMPT_SIM_LAUNCH)
             dialog.destroy()
-            self.status_var.set("Sim launch skipped by user. Closing launcher...")
-            self.after(500, self.destroy)
+            # Resume launch flow
+            self._launch_checklist_sim_sequence()
+
+        # --- Dialog Content ---
         
         content_frame = ttk.Frame(dialog, padding=15)
         content_frame.pack(fill='both', expand=True)
@@ -442,12 +496,14 @@ class ChecklistLauncher(bst.Window):
         
         # Set a protocol to treat window close as "Not Now"
         dialog.protocol("WM_DELETE_WINDOW", handle_not_now)
+        # Block the rest of the application until the dialog is closed.
         self.wait_window(dialog)
 
-    def _launch_sim_and_exit(self):
+
+    def _launch_sim_and_close(self):
         """
         Launches the Flight Simulator (if path is valid) and then closes the launcher.
-        This is called after the Checklist app is already running.
+        This is called after the Checklist app is already running and the delay has elapsed.
         """
         if self.flight_sim_path and os.path.exists(self.flight_sim_path):
             self.status_var.set("Launching Flight Simulator...")
@@ -459,40 +515,59 @@ class ChecklistLauncher(bst.Window):
             except Exception as e:
                 self.status_var.set(f"Error launching Flight Sim: {e}. Closing launcher.")
         else:
-            self.status_var.set("Sim path remains unset or invalid. Closing launcher...")
+            self.status_var.set("Sim path remains unset/invalid, or launch skipped. Closing launcher...")
             
-        # 3. Close the launcher entirely
-        self.after(500, self.destroy) # Close launcher after a short delay
-
-    def _launch_app_core(self):
+        # Close the launcher entirely
+        self.after(500, self.destroy) 
+        
+    def _launch_checklist_sim_sequence(self):
         """
-        Launches the Checklist app first, handles the Sim path prompt, then launches the Sim.
+        1. Launches FlightList.exe.
+        2. Waits 5 seconds.
+        3. Launches Sim (if set) and closes launcher.
         """
         if not os.path.exists(EXE_PATH):
             self.status_var.set("Error: FlightList.exe not found. Cannot launch.")
+            self.after(500, self.destroy)
             return
 
         # 1. Launch FlightList.exe first
         self.status_var.set("1. Launching FlightList.exe...")
         self.update_idletasks()
+        
         try:
             # Launch the checklist app non-blocking
             subprocess.Popen([EXE_PATH])
         except Exception as e:
-            self.status_var.set(f"Error launching checklist app: {e}. Aborting launch sequence.")
+            self.status_var.set(f"Error launching checklist app: {e}. Closing launcher.")
+            self.after(500, self.destroy)
             return
 
-        # 2. Check Sim Path and Prompt if necessary
+        # 2. Introduce a deliberate delay before checking/launching the Sim
+        delay_ms = 5000 # 5 seconds
+        self.status_var.set(f"Checklist launched. Waiting 5s before launching Flight Sim...")
+        self.update_idletasks()
+        
+        # Schedule the final step after the delay
+        self.after(delay_ms, self._launch_sim_and_close)
+
+
+    def _launch_app_core(self):
+        """
+        Checks for Sim path validity. Suspends flow with prompt if path is missing.
+        Always hands off to _launch_checklist_sim_sequence when ready.
+        """
+        # Check Sim Path
         sim_path_valid = self.flight_sim_path and os.path.exists(self.flight_sim_path)
         
         if not sim_path_valid and not self.skip_sim_prompt:
-            # Show the prompt dialog. This call is blocking until the user selects an option.
+            # SUSPEND POINT: Show the prompt dialog. This call is blocking until the user selects an option.
             self.status_var.set("Sim path missing. Awaiting user input...")
             self.update_idletasks()
-            self._show_sim_path_prompt(subprocess.Popen)
+            self._show_sim_path_prompt()
         else:
-            # 3. Launch Sim (or just exit if sim path is set/skip is active)
-            self._launch_sim_and_exit()
+            # Path is set, or user chose to skip prompt: Proceed to launch
+            self._launch_checklist_sim_sequence()
 
 
     def open_lists_folder(self):

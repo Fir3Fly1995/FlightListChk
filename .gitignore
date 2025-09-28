@@ -3,3 +3,4 @@ chkinst.iss
 /flightenv
 /build
 /dist
+.spec
