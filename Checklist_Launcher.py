@@ -144,8 +144,10 @@ class ChecklistLauncher(bst.Window):
 
     def _check_for_update(self):
         """Checks the remote manifest.txt for the latest version and message."""
+        print(f"Attempting to fetch manifest from: {MANIFEST_URL}") # Diagnostic print
         try:
-            response = requests.get(MANIFEST_URL, timeout=5)
+            # Added exponential backoff logic for robust request handling
+            response = self._make_request_with_backoff(MANIFEST_URL)
             response.raise_for_status()
             
             remote_info = self._parse_version_info(response.text)
@@ -162,6 +164,29 @@ class ChecklistLauncher(bst.Window):
             print(f"Unexpected error during update check: {e}")
             self.remote_version_info = None
             self.is_offline = False
+
+    def _make_request_with_backoff(self, url, method='get', stream=False):
+        """Performs a request with basic exponential backoff."""
+        max_retries = 3
+        delay = 1
+        
+        for i in range(max_retries):
+            try:
+                response = requests.request(method, url, stream=stream, timeout=5 if not stream else 30)
+                # Check for client-side errors (4xx) which shouldn't be retried
+                if 400 <= response.status_code < 500:
+                    response.raise_for_status()
+                return response
+            except requests.exceptions.RequestException as e:
+                # Retry only if not the last attempt
+                if i < max_retries - 1:
+                    print(f"Request failed, retrying in {delay}s...")
+                    tk.Misc.after(self, delay * 1000, lambda: None) # Non-blocking sleep
+                    delay *= 2
+                else:
+                    raise e
+        # Should be unreachable
+        raise requests.exceptions.RequestException("Max retries exceeded.")
 
 
     # --- UI Status and Layout ---
@@ -324,7 +349,8 @@ class ChecklistLauncher(bst.Window):
         
         try:
             # 1. Download the executable file
-            file_response = requests.get(EXE_DOWNLOAD_URL, stream=True, timeout=30)
+            # Use backoff for download request
+            file_response = self._make_request_with_backoff(EXE_DOWNLOAD_URL, stream=True)
             file_response.raise_for_status()
 
             # 2. Save the file to the local path in binary mode
