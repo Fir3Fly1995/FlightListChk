@@ -1,4 +1,4 @@
-# FlightListChk License (MIT + Author Preamble)
+# FlightListChk License
 
 This project can be freely cloned from [https://github.com/Fir3Fly1995/FlightListChk](https://github.com/Fir3Fly1995/FlightListChk).  
 It is free for anyone to use, copy, distribute as-is, or modify with attribution.
@@ -10,7 +10,7 @@ If you intend to modify this project, please include in the footer of `chklst.py
 - The line number(s) changed  
 - A description of the change  
 
-Please also notify **Fir3Fly1995** (via GitHub issues, pull request, or the public repo email) with a link to the updated code so improvements can be integrated if they benefit everyone.
+Please also notify **Fir3Fly1995** (via your GitHub contact email or pull request) with a link to the updated code so improvements can be integrated if they benefit everyone.
 
 Thank you for downloading FlightListChk.  
 I hope that simmers and pilots alike will enjoy and find this program useful.  
@@ -24,14 +24,14 @@ If you modify this program, please keep it Python-based, and let’s show some E
 
 Copyright (c) 2025 Fir3Fly1995
 
-Permission is hereby granted, free of charge, to any person obtaining a copy  
-of this software and associated documentation files (the "Software"), to deal  
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights  
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell  
 copies of the Software, and to permit persons to whom the Software is  
 furnished to do so, subject to the following conditions:
 
-The above copyright notice, this permission notice, **and the preamble text above**  
+The above copyright notice, this permission notice, and the preamble text above  
 shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR  
